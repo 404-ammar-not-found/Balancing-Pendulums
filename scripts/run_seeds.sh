@@ -14,7 +14,7 @@ for seed in 0 1 2; do
     extra+=(--timesteps "$TIMESTEPS")
   fi
   echo "Launching seed ${seed} (log: results/logs/train_${TASK}_seed${seed}.log)"
-  caffeinate -i uv run python scripts/train_sac.py --task "$TASK" --seed "$seed" "${extra[@]}" \
+  caffeinate -i uv run python scripts/train_sac.py --task "$TASK" --seed "$seed" ${extra[@]+"${extra[@]}"} \
     > "results/logs/train_${TASK}_seed${seed}.log" 2>&1 &
   pids+=("$!")
 done
