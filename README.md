@@ -199,7 +199,7 @@ committed.
 
 ## 6. Notes & deviations
 
-- Repo name is `balancing-pendulms`; the spec tree calls the project
+- The spec tree calls the project
   `double-pendulum-rl` (internal structure matches).
 - Dependencies via uv (`pyproject.toml` + `uv.lock`); `requirements.txt` kept
   in sync for pip users.
