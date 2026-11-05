@@ -49,6 +49,9 @@ def main() -> None:
     parser.add_argument("--timesteps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--randomize", action="store_true")
+    parser.add_argument("--use-sde", action="store_true", help="gSDE exploration (use with SAC)")
+    parser.add_argument("--target-entropy", type=float, default=None, help="override SAC entropy target (auto by default)")
+    parser.add_argument("--gradient-steps", type=int, default=1, help="optimizer updates per env step (update-to-data ratio)")
     parser.add_argument("--velocity-penalty", type=float, default=None)
     parser.add_argument("--episode-steps", type=int, default=None)
     parser.add_argument("--init-from", type=str, default=None, help="checkpoint dir to fine-tune from (model.zip + vecnormalize.pkl)")
@@ -81,15 +84,22 @@ def main() -> None:
         )
     else:
         vec_env = VecNormalize(SubprocVecEnv(env_fns, start_method="spawn"))
-        model = SAC(
-            "MlpPolicy",
-            vec_env,
+        sac_kwargs = dict(
+            policy="MlpPolicy",
+            env=vec_env,
             seed=args.seed,
             device="cpu",
             policy_kwargs=dict(net_arch=NET_ARCH),
             tensorboard_log=str(pathlib.Path("results/tb")),
             verbose=1,
         )
+        if args.use_sde:
+            sac_kwargs.update(use_sde=True, use_sde_at_warmup=True, sde_sample_freq=10)
+        if args.target_entropy is not None:
+            sac_kwargs.update(target_entropy=args.target_entropy)
+        if args.gradient_steps != 1:
+            sac_kwargs.update(gradient_steps=args.gradient_steps)
+        model = SAC(**sac_kwargs)
 
     eval_env = VecNormalize(
         DummyVecEnv([make_env_fn(args.task, args.seed + 1000, 0, False, args.velocity_penalty, args.episode_steps)]),

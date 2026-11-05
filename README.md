@@ -96,21 +96,46 @@ Training took ~7 min per seed on an M4 Pro (CPU only, 8 SubprocVecEnv workers,
   noise, inherits the same sensitivity. Robustness to noise would need noise
   injected during training (or a higher R for LQR).
 - *Swing-up* (1000-step / 20 s task, success = both |theta| < 0.1 rad sustained
-  2 s and no early termination): **seed 1 solves it completely — 100% success
-  over 100 episodes, mean time to upright 3.4 s** (acceptance bar 50%, stretch
-  90%). Seeds 0 and 2 got stuck in a partial-credit local optimum: they park
-  the top rod upright while the bottom rod keeps rotating (mean |theta2| ~ 0.9
-  rad, earning ~0.6-0.7 reward per step without ever holding both rods still).
-  The spec's fallback ladder was applied to both failing seeds and none escaped
-  that optimum: (1) 2000-step episodes + velocity penalty 0.001 -> 0.0002
-  (returns rose to 1402/2000 but wagging got *cheaper* — still 0% strict
-  success), (2) velocity penalty 0.004 to punish wagging (489 return, 0%),
-  (3) fine-tuning from the balance policy for 1.5M steps (384 return, 0%).
-  Only gSDE / a larger entropy coefficient remain untried. Net: 1 of 3 seeds
-  fully solves swing-up; `traces_swingup.png` and
-  `results/videos/swingup_seed1_swingup.gif` show the solving policy.
-  Reproduce with `scripts/run_seeds.sh swingup` (~25 min for 3 seeds in
-  parallel on an M4 Pro).
+  2 s and no early termination): **all three seeds now succeed at 100%**:
+
+  | Seed | Optimiser | Success | Return | Time to upright |
+  |---|---|---|---|---|
+  | 0 | SAC + gSDE | 100% | 896 | 3.58 s |
+  | 1 | SAC (vanilla) | 100% | 890 | 3.42 s |
+  | 2 | SAC + gSDE + gradient_steps 2 | 100% | 933 | 2.58 s |
+
+  Getting there took an optimizer-tuning loop, because vanilla SAC lands 2 of 3
+  seeds in a partial-credit local optimum: park the top rod upright while the
+  bottom rod keeps rotating (~0.65 reward/step without ever holding both
+  still). What was tried on the failing seeds (all standard 20 s task, 2M
+  steps unless noted):
+
+  | Variant | Seed 0 | Seed 2 |
+  |---|---|---|
+  | vanilla SAC (baseline) | 0% | 0% |
+  | 2000-step episodes + velocity penalty 0.0002 | 0% | 0% |
+  | velocity penalty 0.004 (punish wagging) | — | 0% |
+  | fine-tune from balance policy, 1.5M | — | 0% |
+  | target_entropy = 0 | 100% | 0% |
+  | **gSDE** (sde_sample_freq 10) | **100%** | 0% (642 return, still climbing) |
+  | gSDE, 3M steps | — | 100% (904) |
+  | gSDE + target_entropy 0.5 | — | 0% (185) |
+  | **gSDE + gradient_steps 2 (2x update-to-data)** | — | **100% (933, best agent)** |
+  | gSDE + target_entropy 0.5 + gradient_steps 2 | — | 0% (528) |
+
+  Conclusions: the failure was an *exploration/optimization* problem, not a
+  reward problem — every reward-shaping change failed, while gSDE's
+  temporally-correlated noise (sustained energetic swings) plus a doubled
+  update-to-data ratio (faster value propagation out of the local optimum)
+  solved it within the original budget. Excess entropy (target 0.5) hurt:
+  it never commits. Traces in `traces_swingup.png`; GIFs per seed in
+  `results/videos/` (e.g. `swingup_seed2_sdeg2_swingup.gif`).
+  Reproduce the winning configs:
+
+  ```bash
+  caffeinate -i uv run python scripts/train_sac.py --task swingup --seed 0 --use-sde
+  caffeinate -i uv run python scripts/train_sac.py --task swingup --seed 2 --use-sde --gradient-steps 2
+  ```
 
 Plots: `learning_curves_balance.png`, `roa_balance.png`, `traces_balance.png`,
 `robustness_*.png`. Episode GIFs in `results/videos/`.
