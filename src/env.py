@@ -45,6 +45,7 @@ class DoublePendulumCartEnv(gymnasium.Env):
         obs_noise_std: float = 0.0,
         render_mode: str | None = None,
         reward_weights: dict | None = None,
+        max_episode_steps: int | None = None,
     ):
         if task not in TASK_CONFIG:
             raise ValueError(f"unknown task {task!r}, expected one of {tuple(TASK_CONFIG)}")
@@ -60,7 +61,7 @@ class DoublePendulumCartEnv(gymnasium.Env):
             self.reward_weights.update(reward_weights)
 
         cfg = TASK_CONFIG[task]
-        self.max_episode_steps = cfg["max_episode_steps"]
+        self.max_episode_steps = cfg["max_episode_steps"] if max_episode_steps is None else max_episode_steps
         self.angle_terminate = cfg["angle_terminate"]
         self.n_substeps = int(round(self.params.control_dt / self.params.dt))
 

@@ -63,7 +63,9 @@ def time_to_upright(
     Returns None if the condition is never met. ``states`` is (T, 6) raw states.
     """
     need = int(round(sustain_s / control_dt))
-    inside = (np.abs(states[:, 1]) < thresh) & (np.abs(states[:, 2]) < thresh)
+    th1 = (states[:, 1] + np.pi) % (2 * np.pi) - np.pi
+    th2 = (states[:, 2] + np.pi) % (2 * np.pi) - np.pi
+    inside = (np.abs(th1) < thresh) & (np.abs(th2) < thresh)
     count = 0
     for t, ok in enumerate(inside):
         count = count + 1 if ok else 0

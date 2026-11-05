@@ -66,6 +66,7 @@ def main() -> None:
     parser.add_argument("--obs-noise", type=float, default=0.0)
     parser.add_argument("--m2-scale", type=float, default=1.0)
     parser.add_argument("--l2-scale", type=float, default=1.0)
+    parser.add_argument("--episode-steps", type=int, default=None)
     parser.add_argument("--video", action="store_true", help="save a GIF of the first episode")
     parser.add_argument("--out", type=pathlib.Path, default=None)
     args = parser.parse_args()
@@ -77,6 +78,7 @@ def main() -> None:
         params=params,
         obs_noise_std=args.obs_noise,
         render_mode="rgb_array" if args.video else None,
+        max_episode_steps=args.episode_steps,
     )
     env.reset(seed=args.seed)
     env.action_space.seed(args.seed)

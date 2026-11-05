@@ -26,9 +26,16 @@ EVAL_FREQ = 20_000
 NET_ARCH = [256, 256]
 
 
-def make_env_fn(task: str, seed: int, rank: int, randomize: bool):
+def make_env_fn(task: str, seed: int, rank: int, randomize: bool, velocity_penalty: float | None = None,
+                episode_steps: int | None = None):
     def _init():
-        env = DoublePendulumCartEnv(task=task, randomize_params=randomize)
+        reward_weights = None if velocity_penalty is None else {"velocity": velocity_penalty}
+        env = DoublePendulumCartEnv(
+            task=task,
+            randomize_params=randomize,
+            reward_weights=reward_weights,
+            max_episode_steps=episode_steps,
+        )
         env.reset(seed=seed + rank)
         env.action_space.seed(seed + rank)
         return env
@@ -42,6 +49,9 @@ def main() -> None:
     parser.add_argument("--timesteps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--randomize", action="store_true")
+    parser.add_argument("--velocity-penalty", type=float, default=None)
+    parser.add_argument("--episode-steps", type=int, default=None)
+    parser.add_argument("--init-from", type=str, default=None, help="checkpoint dir to fine-tune from (model.zip + vecnormalize.pkl)")
     parser.add_argument("--out", type=pathlib.Path, default=None)
     args = parser.parse_args()
 
@@ -51,11 +61,38 @@ def main() -> None:
     out_dir = args.out if args.out is not None else pathlib.Path(f"results/sac/{args.task}_seed{args.seed}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    env_fns = [make_env_fn(args.task, args.seed, rank, args.randomize) for rank in range(N_ENVS)]
-    vec_env = VecNormalize(SubprocVecEnv(env_fns, start_method="spawn"))
+    env_fns = [
+        make_env_fn(args.task, args.seed, rank, args.randomize, args.velocity_penalty, args.episode_steps)
+        for rank in range(N_ENVS)
+    ]
+    if args.init_from is not None:
+        init_dir = pathlib.Path(args.init_from)
+        vec_env = VecNormalize.load(
+            str(init_dir / "vecnormalize.pkl"), SubprocVecEnv(env_fns, start_method="spawn")
+        )
+        vec_env.training = True
+        vec_env.norm_reward = True
+        model = SAC.load(
+            str(init_dir / "best_model.zip"),
+            env=vec_env,
+            device="cpu",
+            tensorboard_log=str(pathlib.Path("results/tb")),
+            verbose=1,
+        )
+    else:
+        vec_env = VecNormalize(SubprocVecEnv(env_fns, start_method="spawn"))
+        model = SAC(
+            "MlpPolicy",
+            vec_env,
+            seed=args.seed,
+            device="cpu",
+            policy_kwargs=dict(net_arch=NET_ARCH),
+            tensorboard_log=str(pathlib.Path("results/tb")),
+            verbose=1,
+        )
 
     eval_env = VecNormalize(
-        DummyVecEnv([make_env_fn(args.task, args.seed + 1000, 0, False)]),
+        DummyVecEnv([make_env_fn(args.task, args.seed + 1000, 0, False, args.velocity_penalty, args.episode_steps)]),
         training=False,
         norm_reward=False,
     )
@@ -69,15 +106,6 @@ def main() -> None:
         deterministic=True,
     )
 
-    model = SAC(
-        "MlpPolicy",
-        vec_env,
-        seed=args.seed,
-        device="cpu",
-        policy_kwargs=dict(net_arch=NET_ARCH),
-        tensorboard_log=str(pathlib.Path("results/tb")),
-        verbose=1,
-    )
     model.learn(total_timesteps=timesteps, callback=eval_callback, tb_log_name=f"{args.task}_seed{args.seed}")
     model.save(out_dir / "model")
     vec_env.save(out_dir / "vecnormalize.pkl")

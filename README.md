@@ -28,6 +28,10 @@ scripts/run_seeds.sh swingup
 # Train with domain randomisation
 uv run python scripts/train_sac.py --task balance --seed 0 --randomize --out results/sac/balance_seed0_rand
 
+# Swing-up fallback variants (see Results for what was tried)
+uv run python scripts/train_sac.py --task swingup --seed 0 --timesteps 1500000 \
+  --init-from results/sac/balance_seed0 --out results/sac/swingup_seed0_ft
+
 # Evaluate any controller (100 episodes, GIF of the first episode)
 uv run python scripts/evaluate.py --controller lqr --task balance --episodes 100 --video
 uv run python scripts/evaluate.py --controller results/sac/balance_seed0 --task balance --episodes 100 --video
@@ -91,10 +95,22 @@ Training took ~7 min per seed on an M4 Pro (CPU only, 8 SubprocVecEnv workers,
   force jitter and the pendulum wobbles past 0.5 rad. SAC, trained without
   noise, inherits the same sensitivity. Robustness to noise would need noise
   injected during training (or a higher R for LQR).
-- *Swing-up*: not yet trained in this run — `scripts/run_seeds.sh swingup`
-  (2M steps/seed, hours) reproduces it; `compare.py` picks up the checkpoints
-  automatically and writes `traces_swingup.png` + a swing-up GIF via
-  `evaluate.py --task swingup`.
+- *Swing-up* (1000-step / 20 s task, success = both |theta| < 0.1 rad sustained
+  2 s and no early termination): **seed 1 solves it completely — 100% success
+  over 100 episodes, mean time to upright 3.4 s** (acceptance bar 50%, stretch
+  90%). Seeds 0 and 2 got stuck in a partial-credit local optimum: they park
+  the top rod upright while the bottom rod keeps rotating (mean |theta2| ~ 0.9
+  rad, earning ~0.6-0.7 reward per step without ever holding both rods still).
+  The spec's fallback ladder was applied to both failing seeds and none escaped
+  that optimum: (1) 2000-step episodes + velocity penalty 0.001 -> 0.0002
+  (returns rose to 1402/2000 but wagging got *cheaper* — still 0% strict
+  success), (2) velocity penalty 0.004 to punish wagging (489 return, 0%),
+  (3) fine-tuning from the balance policy for 1.5M steps (384 return, 0%).
+  Only gSDE / a larger entropy coefficient remain untried. Net: 1 of 3 seeds
+  fully solves swing-up; `traces_swingup.png` and
+  `results/videos/swingup_seed1_swingup.gif` show the solving policy.
+  Reproduce with `scripts/run_seeds.sh swingup` (~25 min for 3 seeds in
+  parallel on an M4 Pro).
 
 Plots: `learning_curves_balance.png`, `roa_balance.png`, `traces_balance.png`,
 `robustness_*.png`. Episode GIFs in `results/videos/`.
